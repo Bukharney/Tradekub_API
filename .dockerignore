@@ -1,0 +1,35 @@
+__pycache__
+**/__pycache__
+*.pyc
+*.pyo
+*.pyd
+.env
+.env.*
+venv/
+env/
+.venv/
+
+# Database files (not needed in image)
+*.db
+*.sqlite3
+
+# Test artifacts
+tests/
+.pytest_cache/
+test_all_api.db
+
+# Dev tooling
+.vscode/
+.DS_Store
+run_local.py
+
+# Git
+.git/
+.gitignore
+.github/
+
+# Docs / misc
+README.md
+*.txt.bak
+nginx.txt
+gunicorn.service
