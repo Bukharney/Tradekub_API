@@ -73,34 +73,3 @@ jobs:
           platforms: linux/arm64
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-  # ── 3. Deploy to server via SSH ─────────────────────────────────────────────
-  deploy:
-    needs: docker
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    steps:
-      - name: Deploy to server
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          port: ${{ secrets.SSH_PORT || 22 }}
-          script: |
-            set -e
-
-            # Pull the new image
-            podman pull ghcr.io/${{ github.repository_owner }}/tradekub_api:latest
-
-            # Run DB migrations before restarting the app
-            podman run --rm \
-              --env-file ~/tradekub/api.env \
-              ghcr.io/${{ github.repository_owner }}/tradekub_api:latest \
-              alembic upgrade head
-
-            # Restart the api container
-            cd ~/tradekub
-            podman-compose -f podman-compose.yml up -d --pull=never api
-
-            echo "✅ Tradekub API deployed successfully"
