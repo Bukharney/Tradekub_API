@@ -1,6 +1,7 @@
 version: "3.9"
 
 services:
+  # ── PostgreSQL ──────────────────────────────────────────────────────────────
   postgres:
     image: postgres:15-alpine
     restart: unless-stopped
@@ -16,6 +17,7 @@ services:
       timeout: 5s
       retries: 5
 
+  # ── FastAPI backend ─────────────────────────────────────────────────────────
   api:
     image: ghcr.io/bukharney/tradekub_api:latest
     restart: unless-stopped
@@ -35,6 +37,15 @@ services:
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-60}
       NEWS_DATA_API_KEY: ${NEWS_DATA_API_KEY}
       GUNICORN_WORKERS: ${GUNICORN_WORKERS:-2}
+
+  # ── React frontend (nginx) ──────────────────────────────────────────────────
+  frontend:
+    image: ghcr.io/bukharney/tradekubv2:latest
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - api
 
 volumes:
   postgres-data:
