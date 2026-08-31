@@ -1,7 +1,7 @@
 try:
     from pydantic_settings import BaseSettings
 except ImportError:
-    from pydantic.v1 import BaseSettings
+    from pydantic import BaseSettings  # pydantic v1
 
 
 class Settings(BaseSettings):
