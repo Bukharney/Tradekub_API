@@ -1,62 +1,100 @@
-# TradeKub
+# TradeKub API
 
-TradeKub is an online trading application built with React, PostgreSQL, and FastAPI. This README file provides essential information about the TradeKub project, including its features, technology stack, and relevant links.
+TradeKub API is an online trading backend service built with Python, FastAPI, and SQLAlchemy.
 
 ## Features
 
-- TradeKub allows users to engage in online trading activities.
-- Users can create an account and securely log in to access their trading dashboard.
-- The application provides real-time market data and price charts for various assets.
-- Users can place buy and sell orders for stocks.
-- TradeKub offers a portfolio management feature, allowing users to track their investments and performance.
-- The application provides detailed transaction history and account balance information.
+- **User Authentication**: Secure JWT-based authentication (`/login`, `/logout`).
+- **Account & Portfolio Management**: Track cash balance, line available, credit limits, and stock holdings.
+- **Order Engine**: Real-time limit order placement (`Buy`/`Sell`), cancellation, and automatic matching engine.
+- **Banking Transactions**: Deposit and withdrawal management.
+- **Stock Market Data**: Real-time price info, bid/offer depth, historical candlesticks, and search.
+- **Dividends & Turnover**: Financial statement metrics and dividend tracking.
+- **Analytics & Notifications**: Market activity insights and automated user alerts.
 
-## Technology Stack
+---
 
-The TradeKub application is developed using the following technologies:
+## Local Setup & Quick Start
 
-- React: A JavaScript library for building user interfaces.
-- PostgreSQL: A powerful, open-source relational database management system.
-- FastAPI: A modern, fast (high-performance), web framework for building APIs.
+### 1. Requirements
+- Python 3.10+
+- Virtual environment (`venv`)
 
-## Links
+### 2. Installation
 
-- API Documentation: The API documentation for TradeKub can be found at [https://www.tradekub.me/docs](https://tradekub.me/docs).
-- Application: TradeKub's web application can be accessed at [https://www.projecttradekub.me/](https://projecttradekub.me/).
-- GitHub
-   - Front-end sourcecode[https://github.com/Bukharney/ProjectTradeKub/](https://github.com/Bukharney/ProjectTradeKub/).
-   - Back-end sourcecode [https://github.com/Bukharney/Tradekub_api/](https://github.com/Bukharney/Tradekub_api/).
+Clone the repository and install the required dependencies:
 
-## Getting Started
+```bash
+git clone https://github.com/Bukharney/Tradekub_api.git
+cd Tradekub_api
 
-To run TradeKub locally on your machine, follow these steps:
+# Create and activate a virtual environment
+python -m venv venv
+# On Windows:
+venv\Scripts\activate
+# On macOS/Linux:
+source venv/bin/activate
 
-1. Clone the repository: 
-   ```
-   git clone https://github.com/your-username/tradekub.git
-   ```
+# Install dependencies
+pip install -r requirements.txt
+```
 
-2. Install the dependencies:
-   ```
-   cd tradekub
-   npm install
-   ```
+### 3. Environment Configuration
 
-3. Start the application:
-   ```
-   npm start
-   ```
+Copy `.env.example` to create your local `.env` file:
 
-4. Access the TradeKub application in your browser at `http://localhost:3000`.
+```bash
+cp .env.example .env
+```
 
-## Contributing
+Default local `.env` setup uses SQLite (`tradekub.db`):
+```env
+DATABASE_URL=sqlite:///./tradekub.db
+SECRET_KEY=local_dev_secret_key_change_in_production_1234567890
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=1440
+HOST=127.0.0.1
+PORT=8000
+```
 
-We welcome contributions to the TradeKub project. If you would like to contribute, please follow these guidelines:
+*(To use PostgreSQL instead, update `DATABASE_URL=postgresql://username:password@localhost:5432/tradekub`)*.
 
-1. Fork the repository and create a new branch for your contribution.
-2. Make your changes and ensure that the code passes all tests.
-3. Submit a pull request with a clear description of your changes and their purpose.
+---
+
+### 4. Running the Local Server
+
+Run the automated local startup script:
+
+```bash
+python run_local.py
+```
+
+Or start directly with Uvicorn:
+
+```bash
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+---
+
+### 5. API Documentation
+
+Once the server is running, access the interactive API documentations at:
+- **Swagger UI**: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+- **ReDoc**: [http://127.0.0.1:8000/redoc](http://127.0.0.1:8000/redoc)
+
+---
+
+### 6. Running Tests
+
+Run the full automated pytest test suite:
+
+```bash
+python -m pytest tests/ -v
+```
+
+---
 
 ## License
 
-The TradeKub project is licensed under the [MIT License](LICENSE). Feel free to use, modify, and distribute the code as per the terms of the license.
+TradeKub is open-source software licensed under the [MIT License](LICENSE).

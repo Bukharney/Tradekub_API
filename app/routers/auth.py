@@ -1,9 +1,8 @@
 from datetime import timedelta
-from fastapi import APIRouter, Depends, status, HTTPException, Response
+from fastapi import APIRouter, Depends, status, HTTPException, Response, Request
 from fastapi.security.oauth2 import OAuth2PasswordRequestForm
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-from random import randint
 
 from .. import database, schemas, models, utils, oauth2
 
@@ -12,6 +11,7 @@ router = APIRouter(tags=["Authentication"])
 
 @router.post("/login", response_model=schemas.Token)
 def login(
+    request: Request,
     user_credentials: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(database.get_db),
 ):
@@ -32,18 +32,24 @@ def login(
         )
 
     access_token = oauth2.create_access_token(data={"user_id": user.id})
-    login = models.Login_Logout(
-        id=randint(1, 1000000000),
+
+    client_ip = (
+        request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+        or (request.client.host if request.client else "unknown")
+    )
+    user_agent = request.headers.get("user-agent", "unknown")
+
+    login_record = models.Login_Logout(
         user_id=user.id,
         logout=utils.get_current_time()
         + timedelta(minutes=oauth2.ACCESS_TOKEN_EXPIRE_MINUTES),
-        device="desktop",
-        ip="0.0.0.0",
+        device=user_agent,
+        ip=client_ip,
     )
 
-    db.add(login)
+    db.add(login_record)
     db.commit()
-    db.refresh(login)
+    db.refresh(login_record)
 
     return {"access_token": access_token, "token_type": "bearer"}
 
@@ -52,25 +58,31 @@ def login(
 def logout(
     response: Response,
     db: Session = Depends(database.get_db),
-    current_user: int = Depends(oauth2.get_current_user),
+    current_user: models.User = Depends(oauth2.get_current_user),
 ):
-    user = db.query(models.User).filter(models.User.email == current_user.email).first()
-
-    logout = (
+    logout_record = (
         db.query(models.Login_Logout)
-        .filter(models.Login_Logout.user_id == user.id)
+        .filter(models.Login_Logout.user_id == current_user.id)
         .order_by(models.Login_Logout.id.desc())
         .first()
     )
 
-    if logout:
-        if utils.get_current_time() < logout.logout:
-            logout.logout = utils.get_current_time()
-            db.add(logout)
+    if logout_record and logout_record.logout:
+        now_naive = utils.get_current_time().replace(tzinfo=None)
+        rec_logout_naive = (
+            logout_record.logout.replace(tzinfo=None)
+            if logout_record.logout.tzinfo
+            else logout_record.logout
+        )
+
+        if now_naive < rec_logout_naive:
+            logout_record.logout = utils.get_current_time()
+            db.add(logout_record)
             db.commit()
-            db.refresh(logout)
+            db.refresh(logout_record)
             response.status_code = status.HTTP_200_OK
             return {"message": "User logged out successfully"}
+
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
         detail="User already logged out",
@@ -78,18 +90,55 @@ def logout(
 
 
 @router.get("/reset", status_code=status.HTTP_200_OK)
-def get_news(
+def reset_db(
     db: Session = Depends(database.get_db),
-    current_user: int = Depends(oauth2.get_current_user),
+    current_user: models.User = Depends(oauth2.get_current_user),
 ):
     if current_user.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admin can reset database",
         )
-    sql = text(
-        "DROP TABLE IF EXISTS login_logout, stocks, brokers, users, accounts, bank_tsc, orders, transactions, news, turnover, dividend, portfolio, alembic_version CASCADE;"
-    )
-    res = db.execute(sql)
+
+    admin_info = {
+        "id": current_user.id,
+        "name": current_user.name,
+        "phone": current_user.phone,
+        "email": current_user.email,
+        "password": current_user.password,
+        "role": current_user.role,
+    }
+
+    tables = [
+        "login_logout",
+        "transactions",
+        "orders",
+        "bank_tsc",
+        "dividend",
+        "portfolio",
+        "notification",
+        "turnover",
+        "accounts",
+        "stocks",
+        "brokers",
+        "users",
+        "news",
+        "alembic_version",
+    ]
+    for table in tables:
+        try:
+            db.execute(text(f"DROP TABLE IF EXISTS {table} CASCADE;"))
+        except Exception:
+            db.execute(text(f"DROP TABLE IF EXISTS {table};"))
+
     db.commit()
-    return res
+
+    # Re-create schema
+    models.Base.metadata.create_all(bind=db.get_bind())
+
+    # Re-insert admin user so active admin session remains valid
+    recreated_admin = models.User(**admin_info)
+    db.add(recreated_admin)
+    db.commit()
+
+    return {"message": "Database reset executed successfully"}

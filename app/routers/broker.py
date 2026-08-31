@@ -14,10 +14,14 @@ router = APIRouter(prefix="/broker", tags=["Broker"])
 )
 def create_broker(
     broker: schemas.BrokerCreate,
-    current_user: int = Depends(oauth2.get_current_user),
+    current_user: models.User = Depends(oauth2.get_current_user),
     db: Session = Depends(get_db),
 ):
-    new_broker = models.Broker(**broker.dict())
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Only admin can create brokers"
+        )
+    new_broker = models.Broker(**broker.model_dump())
     db.add(new_broker)
     db.commit()
     db.refresh(new_broker)
@@ -29,7 +33,7 @@ def create_broker(
     status_code=status.HTTP_200_OK,
 )
 def get_all_brokers(
-    current_user: int = Depends(oauth2.get_current_user),
+    current_user: models.User = Depends(oauth2.get_current_user),
     db: Session = Depends(get_db),
 ):
     brokers = db.query(models.Broker).all()
@@ -42,7 +46,7 @@ def get_all_brokers(
 )
 def get_broker(
     id: int,
-    current_user: int = Depends(oauth2.get_current_user),
+    current_user: models.User = Depends(oauth2.get_current_user),
     db: Session = Depends(get_db),
 ):
     broker = db.query(models.Broker).filter(models.Broker.id == id).first()

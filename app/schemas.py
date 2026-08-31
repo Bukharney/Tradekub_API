@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr
 from datetime import datetime, date
 from typing import Optional
 
@@ -9,8 +9,7 @@ class UserOut(BaseModel):
     phone: str
     email: EmailStr
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UserCreate(BaseModel):
@@ -30,8 +29,12 @@ class Token(BaseModel):
     token_type: str
 
 
+from typing import Optional, Union
+
+
 class TokenData(BaseModel):
-    id: Optional[str] = None
+    id: Optional[Union[str, int]] = None
+
 
 
 class Account(BaseModel):
@@ -41,20 +44,19 @@ class Account(BaseModel):
 class AccountCreate(BaseModel):
     user_id: int
     broker_id: int
-    cash_balance: int
-    line_available: int
-    credit_limit: int
+    cash_balance: float
+    line_available: float
+    credit_limit: float
     pin: int
 
 
 class AccountOut(Account):
     broker_id: int
-    cash_balance: int
-    line_available: int
-    credit_limit: int
+    cash_balance: float
+    line_available: float
+    credit_limit: float
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class StockCreate(BaseModel):
@@ -73,16 +75,14 @@ class StockCreate(BaseModel):
     free_float: int
     major_shareholders: int
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class StockOut(BaseModel):
     symbol: str
     company_name: str
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class StockOutMarket(BaseModel):
@@ -92,43 +92,38 @@ class StockOutMarket(BaseModel):
     change: float
     value: float
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class BrokerOut(BaseModel):
     name: str
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class BrokerCreate(BaseModel):
     name: str
     api_key: str
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class BankTransactionCreate(BaseModel):
     account_id: int
     account_number: str
     type: str
-    amount: int
+    amount: float
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class BankTransactionOut(BaseModel):
     id: int
     type: str
-    amount: int
+    amount: float
     timestamp: datetime
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class OrderCreate(BaseModel):
@@ -141,8 +136,7 @@ class OrderCreate(BaseModel):
     validity: str
     pin: int
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class OrderUpdate(OrderCreate):
@@ -152,16 +146,14 @@ class OrderUpdate(OrderCreate):
     matched: int
     cancelled: int
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class OrderCancel(BaseModel):
     id: int
     pin: int
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class OrderOut(BaseModel):
@@ -176,8 +168,7 @@ class OrderOut(BaseModel):
     time: datetime
     status: str
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class StockSearch(BaseModel):
@@ -191,16 +182,14 @@ class DividendCreate(BaseModel):
     account_id: int
     value: float
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class DividendOut(DividendCreate):
     id: int
     timestamp: datetime
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class NotiOut(BaseModel):
@@ -210,8 +199,7 @@ class NotiOut(BaseModel):
     price: float
     created_at: datetime
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PortfolioCreate(BaseModel):
@@ -220,33 +208,30 @@ class PortfolioCreate(BaseModel):
     volume: int
     price: float
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PortfolioOut(BaseModel):
     symbol: str
     volume: int
     avg_price: float
-    last_price: float
-    change: float
-    open: float
-    close: float
-    high: float
-    low: float
-    market_status: str
+    last_price: float = 0.0
+    change: float = 0.0
+    open: float = 0.0
+    close: float = 0.0
+    high: float = 0.0
+    low: float = 0.0
+    market_status: str = "CLOSED"
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class LoginOut(BaseModel):
     login: datetime
-    device: str
-    ip: str
+    device: Optional[str] = None
+    ip: Optional[str] = None
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TransactionCreate(BaseModel):
@@ -254,5 +239,4 @@ class TransactionCreate(BaseModel):
     price: float
     volume: int
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)

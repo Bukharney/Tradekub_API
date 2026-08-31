@@ -10,22 +10,27 @@ router = APIRouter(prefix="/account", tags=["Account"])
 
 
 @router.get("/all")
-def get_all_accounts(
-    current_user: int = Depends(oauth2.get_current_user),
+def get_all_accounts_admin(
+    current_user: models.User = Depends(oauth2.get_current_user),
     db: Session = Depends(get_db),
 ):
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not authorized to view all accounts",
+        )
     accounts = db.query(models.Accounts).all()
     return accounts
 
 
 @router.get("/my", response_model=List[schemas.AccountOut])
-def get_all_accounts(
-    current_user: int = Depends(oauth2.get_current_user),
+def get_my_accounts(
+    current_user: models.User = Depends(oauth2.get_current_user),
     db: Session = Depends(get_db),
 ):
     accounts = (
         db.query(models.Accounts)
-        .filter(current_user.id == models.Accounts.user_id)
+        .filter(models.Accounts.user_id == current_user.id)
         .all()
     )
     return accounts
@@ -34,7 +39,7 @@ def get_all_accounts(
 @router.get("/{account_id}")
 def get_account(
     account_id: int,
-    current_user: int = Depends(oauth2.get_current_user),
+    current_user: models.User = Depends(oauth2.get_current_user),
     db: Session = Depends(get_db),
 ):
     account = db.query(models.Accounts).filter(models.Accounts.id == account_id).first()
@@ -46,20 +51,28 @@ def get_account(
         db.query(models.Broker).filter(models.Broker.id == account.broker_id).first()
     )
 
-    account.broker_name = broker.name
-    return account
+    account_dict = {
+        "id": account.id,
+        "user_id": account.user_id,
+        "broker_id": account.broker_id,
+        "broker_name": broker.name if broker else "Unknown",
+        "cash_balance": account.cash_balance,
+        "line_available": account.line_available,
+        "credit_limit": account.credit_limit,
+    }
+    return account_dict
 
 
 @router.get(
     "/verify_balance/{account_id}",
     status_code=status.HTTP_200_OK,
 )
-def get_portfolio(
+def verify_account_balance(
     account_id: int,
-    current_user: int = Depends(oauth2.get_current_user),
+    current_user: models.User = Depends(oauth2.get_current_user),
     db: Session = Depends(get_db),
 ):
-    if current_user.role != "admin" and current_user.role != "broker":
+    if current_user.role not in ["admin", "broker"]:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="You are not authorized to perform this action",
@@ -71,16 +84,17 @@ def get_portfolio(
             status_code=status.HTTP_404_NOT_FOUND, detail="Account not found"
         )
 
-    broker_account = (
-        db.query(models.Accounts)
-        .filter(models.Accounts.user_id == current_user.id)
-        .first()
-    )
-    if not broker_account.broker_id == account.broker_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="You are not authorized to perform this action",
+    if current_user.role == "broker":
+        broker_account = (
+            db.query(models.Accounts)
+            .filter(models.Accounts.user_id == current_user.id)
+            .first()
         )
+        if not broker_account or broker_account.broker_id != account.broker_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="You are not authorized to perform this action",
+            )
 
     account.cash_balance = account.line_available
     db.commit()
@@ -96,7 +110,7 @@ def get_portfolio(
 )
 def create_account(
     account: schemas.AccountCreate,
-    current_user: int = Depends(oauth2.get_current_user),
+    current_user: models.User = Depends(oauth2.get_current_user),
     db: Session = Depends(get_db),
 ):
     broker = (
@@ -107,7 +121,7 @@ def create_account(
             status_code=status.HTTP_404_NOT_FOUND, detail="Given broker not found"
         )
 
-    new_account = models.Accounts(**account.dict())
+    new_account = models.Accounts(**account.model_dump())
     try:
         db.add(new_account)
         db.commit()
@@ -125,10 +139,10 @@ def create_account(
 def update_account(
     account_id: int,
     account: schemas.AccountCreate,
-    current_user: int = Depends(oauth2.get_current_user),
+    current_user: models.User = Depends(oauth2.get_current_user),
     db: Session = Depends(get_db),
 ):
-    if current_user.role != "admin" and current_user.role != "broker":
+    if current_user.role not in ["admin", "broker"]:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="You are not authorized to perform this action",
@@ -142,15 +156,9 @@ def update_account(
             status_code=status.HTTP_404_NOT_FOUND, detail="Account not found"
         )
 
-    for key, value in account.dict().items():
-        if value:
+    for key, value in account.model_dump().items():
+        if value is not None:
             setattr(account_db, key, value)
-
-    account_db.broker_id = account.broker_id
-    account_db.user_id = account.user_id
-    account_db.line_available = account.line_available
-    account_db.cash_balance = account.cash_balance
-    account_db.pin = account.pin
 
     db.commit()
     db.refresh(account_db)
@@ -166,10 +174,10 @@ def update_account(
 )
 def delete_account(
     account_id: int,
-    current_user: int = Depends(oauth2.get_current_user),
+    current_user: models.User = Depends(oauth2.get_current_user),
     db: Session = Depends(get_db),
 ):
-    if current_user.role != "admin" and current_user.role != "broker":
+    if current_user.role not in ["admin", "broker"]:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="You are not authorized to perform this action",

@@ -1,6 +1,5 @@
 from typing import List
 from fastapi import Depends, status, HTTPException, APIRouter
-from sqlalchemy import func
 from app import api, oauth2, utils
 from .. import models, schemas
 from ..database import get_db
@@ -14,11 +13,14 @@ router = APIRouter(prefix="/portfolio", tags=["Portfolio"])
     status_code=status.HTTP_200_OK,
 )
 def get_all_portfolio(
-    current_user: int = Depends(oauth2.get_current_user),
+    current_user: models.User = Depends(oauth2.get_current_user),
     db: Session = Depends(get_db),
 ):
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized"
+        )
     result = db.query(models.Portfolio).all()
-
     return result
 
 
@@ -29,13 +31,12 @@ def get_all_portfolio(
 )
 def get_portfolio(
     account_id: int,
-    current_user: int = Depends(oauth2.get_current_user),
+    current_user: models.User = Depends(oauth2.get_current_user),
     db: Session = Depends(get_db),
 ):
     account = (
         db.query(models.Accounts)
         .filter(models.Accounts.id == account_id)
-        .filter(models.Accounts.user_id == current_user.id)
         .first()
     )
 
@@ -44,22 +45,25 @@ def get_portfolio(
             status_code=status.HTTP_404_NOT_FOUND, detail="Account not found"
         )
 
-    result = utils.get_portfolio(db=db, account_id=account_id)
-    if not result:
+    if account.user_id != current_user.id and current_user.role != "admin":
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Portfolio not found"
+            status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized"
         )
 
-    for symbol in result:
-        price_info = api.SetTradeSymbol().get_price_info(symbol["symbol"])
-        symbol["last_price"] = price_info["last"]
-        symbol["change"] = price_info["change"]
-        symbol["close"] = price_info["close"]
-        symbol["open"] = price_info["open"]
-        symbol["high"] = price_info["high"]
-        symbol["low"] = price_info["low"]
-        symbol["market_status"] = price_info["market_status"]
-        print(symbol)
+    result = utils.get_portfolio(db=db, account_id=account_id)
+    if not result:
+        return []
+
+    settrade = api.SetTradeSymbol()
+    for symbol_info in result:
+        price_info = settrade.get_price_info(symbol_info["symbol"])
+        symbol_info["last_price"] = price_info.get("last", 0.0) or 0.0
+        symbol_info["change"] = price_info.get("change", 0.0) or 0.0
+        symbol_info["close"] = price_info.get("close", 0.0) or 0.0
+        symbol_info["open"] = price_info.get("open", 0.0) or 0.0
+        symbol_info["high"] = price_info.get("high", 0.0) or 0.0
+        symbol_info["low"] = price_info.get("low", 0.0) or 0.0
+        symbol_info["market_status"] = price_info.get("market_status", "CLOSED") or "CLOSED"
 
     return result
 
@@ -70,24 +74,13 @@ def get_portfolio(
 )
 def create_portfolio(
     portfolio: schemas.PortfolioCreate,
-    current_user: int = Depends(oauth2.get_current_user),
+    current_user: models.User = Depends(oauth2.get_current_user),
     db: Session = Depends(get_db),
 ):
-    if current_user.role == "user":
+    if current_user.role not in ["admin", "broker"]:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Only brokers and admins can create portfolios",
-        )
-
-    broker_account = (
-        db.query(models.Accounts)
-        .filter(models.Accounts.user_id == current_user.id)
-        .first()
-    )
-
-    if not broker_account:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Account not found"
         )
 
     user_account = (
@@ -95,9 +88,18 @@ def create_portfolio(
         .filter(models.Accounts.id == portfolio.account_id)
         .first()
     )
+    if not user_account:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Target account not found"
+        )
 
     if current_user.role == "broker":
-        if broker_account.broker_id != user_account.broker_id:
+        broker_account = (
+            db.query(models.Accounts)
+            .filter(models.Accounts.user_id == current_user.id)
+            .first()
+        )
+        if not broker_account or broker_account.broker_id != user_account.broker_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You can only create portfolios for your own broker",
@@ -114,10 +116,10 @@ def create_portfolio(
     if portfolio_exists:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Portfolio already exists",
+            detail="Portfolio record already exists",
         )
 
-    new_portfolio = models.Portfolio(**portfolio.dict())
+    new_portfolio = models.Portfolio(**portfolio.model_dump())
     db.add(new_portfolio)
     db.commit()
     db.refresh(new_portfolio)
@@ -133,10 +135,10 @@ def create_portfolio(
 def update_portfolio(
     portfolio_id: int,
     portfolio: schemas.PortfolioCreate,
-    current_user: int = Depends(oauth2.get_current_user),
+    current_user: models.User = Depends(oauth2.get_current_user),
     db: Session = Depends(get_db),
 ):
-    if current_user.role == "user":
+    if current_user.role not in ["admin", "broker"]:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Only brokers and admins can update portfolios",
@@ -153,7 +155,7 @@ def update_portfolio(
         )
 
     db.query(models.Portfolio).filter(models.Portfolio.id == portfolio_id).update(
-        portfolio.dict(exclude_unset=True)
+        portfolio.model_dump(exclude_unset=True)
     )
     db.commit()
     return {

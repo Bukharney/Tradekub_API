@@ -2,6 +2,7 @@ from fastapi import Depends, status, HTTPException, APIRouter
 from sqlalchemy import case, func, text
 from ..database import get_db
 from sqlalchemy.orm import Session
+from app import oauth2, models
 
 router = APIRouter(prefix="/analytics", tags=["Analytics"])
 
@@ -14,24 +15,25 @@ def get_most_vol(
     start_time: str,
     end_time: str,
     db: Session = Depends(get_db),
+    current_user: models.User = Depends(oauth2.get_current_user),
 ):
     sql = text(
         """
     SELECT
-		orders.symbol,
-		SUM(transactions.volume) AS vol_sum,
-		AVG(transactions.price) AS price_avg,
-		COUNT(DISTINCT CASE WHEN side = 'Sell' THEN orders.id END) AS total_sell_order,
-        COUNT(DISTINCT CASE WHEN side = 'Buy' THEN orders.id END) AS total_buy_order
+        orders.symbol,
+        SUM(transactions.volume) AS vol_sum,
+        AVG(transactions.price) AS price_avg,
+        COUNT(DISTINCT CASE WHEN orders.side = 'Sell' THEN orders.id END) AS total_sell_order,
+        COUNT(DISTINCT CASE WHEN orders.side = 'Buy' THEN orders.id END) AS total_buy_order
     FROM
         orders
-	JOIN 
-		transactions
-	ON transactions.order_id = orders.id
+    JOIN 
+        transactions
+    ON transactions.order_id = orders.id
     WHERE 
-        time BETWEEN :start_time AND :end_time
-	GROUP BY orders.symbol
-	ORDER BY vol_sum
+        orders.time BETWEEN :start_time AND :end_time
+    GROUP BY orders.symbol
+    ORDER BY vol_sum DESC
         """
     ).bindparams(start_time=start_time, end_time=end_time)
 
@@ -40,10 +42,10 @@ def get_most_vol(
     orders = [
         {
             "symbol": row.symbol,
-            "vol_sum": row.vol_sum,
-            "price_avg": round(row.price_avg, 2),
-            "total_buy_order": row.total_buy_order,
-            "total_sell_order": row.total_buy_order,
+            "vol_sum": row.vol_sum or 0,
+            "price_avg": round(row.price_avg, 2) if row.price_avg is not None else 0.0,
+            "total_buy_order": row.total_buy_order or 0,
+            "total_sell_order": row.total_sell_order or 0,
         }
         for row in result
     ]
@@ -58,6 +60,7 @@ def get_most_contrac(
     start_time: str,
     end_time: str,
     db: Session = Depends(get_db),
+    current_user: models.User = Depends(oauth2.get_current_user),
 ):
     sql = text(
         """
@@ -72,15 +75,15 @@ def get_most_contrac(
     FROM
         users
     JOIN
-	    accounts
+        accounts
     ON 
-	    accounts.user_id = users.id
+        accounts.user_id = users.id
     JOIN
-	    brokers
+        brokers
     ON
-	    brokers.id = accounts.broker_id
+        brokers.id = accounts.broker_id
     GROUP BY
-	    brokers.id
+        brokers.id, brokers.name
     ORDER BY new_accounts DESC
         """
     ).bindparams(start_time=start_time, end_time=end_time)
@@ -90,11 +93,11 @@ def get_most_contrac(
     orders = [
         {
             "broker_name": row.name,
-            "new_accounts": row.new_accounts,
-            "total_accounts_before": row.total_accounts_before,
-            "total_accounts_endtime": row.total_accounts_endtime,
-            "percentage_new_users": row.percentage_new_users,
-            "total_users": row.total_users,
+            "new_accounts": row.new_accounts or 0,
+            "total_accounts_before": row.total_accounts_before or 0,
+            "total_accounts_endtime": row.total_accounts_endtime or 0,
+            "percentage_new_users": round(row.percentage_new_users, 2) if row.percentage_new_users is not None else 0.0,
+            "total_users": row.total_users or 0,
         }
         for row in result
     ]
@@ -109,6 +112,7 @@ def get_most_cancel(
     start_time: str,
     end_time: str,
     db: Session = Depends(get_db),
+    current_user: models.User = Depends(oauth2.get_current_user),
 ):
     sql = text(
         """
@@ -122,7 +126,7 @@ def get_most_cancel(
     FROM
         stocks
     JOIN
-	    orders
+        orders
     ON 
         stocks.symbol = orders.symbol
     WHERE
@@ -140,9 +144,9 @@ def get_most_cancel(
         {
             "company_name": row.company_name,
             "symbol": row.symbol,
-            "order_date": row.order_date,
-            "average_price": round(row.average_price, 2),
-            "cancel_rate": round(row.cancel_rate, 2),
+            "order_date": str(row.order_date) if row.order_date else "",
+            "average_price": round(row.average_price, 2) if row.average_price is not None else 0.0,
+            "cancel_rate": round(row.cancel_rate, 2) if row.cancel_rate is not None else 0.0,
         }
         for row in result
     ]
@@ -157,6 +161,7 @@ def get_most_closed_value(
     start_time: str,
     end_time: str,
     db: Session = Depends(get_db),
+    current_user: models.User = Depends(oauth2.get_current_user),
 ):
     sql = text(
         """
@@ -170,15 +175,15 @@ def get_most_closed_value(
     FROM
         stocks
     JOIN
-	    orders
+        orders
     ON 
         stocks.symbol = orders.symbol
     JOIN
-	    accounts
+        accounts
     ON 
         accounts.id = orders.account_id
     JOIN
-	    users
+        users
     ON 
         users.id = accounts.user_id
     WHERE
@@ -196,10 +201,10 @@ def get_most_closed_value(
         {
             "company_name": row.company_name,
             "symbol": row.symbol,
-            "date": row.date,
-            "volume": row.volume,
-            "value": round(row.value, 2),
-            "total_users": row.total_users,
+            "date": str(row.date) if row.date else "",
+            "volume": row.volume or 0,
+            "value": round(row.value, 2) if row.value is not None else 0.0,
+            "total_users": row.total_users or 0,
         }
         for row in result
     ]

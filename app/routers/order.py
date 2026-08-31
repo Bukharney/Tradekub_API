@@ -15,7 +15,7 @@ router = APIRouter(prefix="/order", tags=["Order"])
 )
 def create_order(
     order: schemas.OrderCreate,
-    current_user: int = Depends(oauth2.get_current_user),
+    current_user: models.User = Depends(oauth2.get_current_user),
     db: Session = Depends(get_db),
 ):
     account = (
@@ -24,6 +24,11 @@ def create_order(
     if not account:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Account not found"
+        )
+
+    if account.user_id != current_user.id and current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized for this account"
         )
 
     symbol = db.query(models.Stock).filter(models.Stock.symbol == order.symbol).first()
@@ -36,8 +41,11 @@ def create_order(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials"
         )
-    del order.pin
-    new_order = models.Orders(**order.dict())
+
+    order_dict = order.model_dump()
+    order_dict.pop("pin", None)
+
+    new_order = models.Orders(**order_dict)
     new_order.matched = 0
     new_order.balance = order.volume
     new_order.status = "O"
@@ -58,23 +66,27 @@ def create_order(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="No stocks to sell"
             )
+        stock_found = False
         for item in port:
-            volume = item["volume"]
-            symbol = item["symbol"]
-            if symbol == order.symbol:
-                if volume < order.volume:
+            if item["symbol"] == order.symbol:
+                stock_found = True
+                if item["volume"] < order.volume:
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
                         detail="You don't have enough stocks to sell",
                     )
+        if not stock_found:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="No stocks of this symbol to sell"
+            )
 
     db.add(new_order)
     db.commit()
     db.refresh(new_order)
 
-    utils.transactions(
-        db=db,
-    )
+    # Run order matching engine
+    utils.transactions(db=db)
+    db.refresh(new_order)
 
     return new_order
 
@@ -83,80 +95,71 @@ def create_order(
     "/all",
     status_code=status.HTTP_200_OK,
 )
-def get_orders(
-    current_user: int = Depends(oauth2.get_current_user),
+def get_all_orders_admin(
+    current_user: models.User = Depends(oauth2.get_current_user),
     db: Session = Depends(get_db),
 ):
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized"
+        )
     orders = db.query(models.Orders).all()
-    if not orders:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Order not found"
-        )
-
     return orders
 
 
 @router.get(
-    "/{account_id}",
-    response_model=List[schemas.OrderOut],
+    "/endofday",
     status_code=status.HTTP_200_OK,
 )
-def get_orders(
-    account_id: int,
-    current_user: int = Depends(oauth2.get_current_user),
+def end_of_day_orders(
+    current_user: models.User = Depends(oauth2.get_current_user),
     db: Session = Depends(get_db),
 ):
-    orders = (
-        db.query(models.Orders)
-        .filter(models.Orders.account_id == account_id)
-        .order_by(models.Orders.time.desc())
-        .all()
-    )
-    if not orders:
+    if current_user.role != "admin":
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Order not found"
+            status_code=status.HTTP_403_FORBIDDEN, detail="Only admin can run end of day"
         )
-
-    return orders
-
-
-@router.get(
-    "/one/{id}",
-    response_model=schemas.OrderOut,
-    status_code=status.HTTP_200_OK,
-)
-def get_order(
-    id: int,
-    current_user: int = Depends(oauth2.get_current_user),
-    db: Session = Depends(get_db),
-):
-    order = db.query(models.Orders).filter(models.Orders.id == id).first()
-    if not order:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Order not found"
+    orders = db.query(models.Orders).filter(models.Orders.status == "O").all()
+    for order in orders:
+        order.cancelled = 1
+        order.status = "C"
+        account = (
+            db.query(models.Accounts)
+            .filter(models.Accounts.id == order.account_id)
+            .first()
         )
+        if account and order.side == "Buy":
+            account.line_available += order.balance * order.price
 
-    return order
+    db.commit()
+    return {
+        "result": "End of day",
+    }
 
 
 @router.post(
     "/cancel",
     status_code=status.HTTP_200_OK,
 )
-def delete_orders(
+def cancel_order_post(
     order: schemas.OrderCancel,
-    current_user: int = Depends(oauth2.get_current_user),
+    current_user: models.User = Depends(oauth2.get_current_user),
     db: Session = Depends(get_db),
 ):
-    orders = db.query(models.Orders).filter(models.Orders.id == order.id).first()
-    if not orders:
+    db_order = db.query(models.Orders).filter(models.Orders.id == order.id).first()
+    if not db_order:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Order not found"
         )
 
+    if db_order.status == "C":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Order is already closed or cancelled"
+        )
+
     account = (
         db.query(models.Accounts)
-        .filter(models.Accounts.user_id == current_user.id)
+        .filter(models.Accounts.id == db_order.account_id)
         .first()
     )
     if not account:
@@ -164,10 +167,10 @@ def delete_orders(
             status_code=status.HTTP_404_NOT_FOUND, detail="Account not found"
         )
 
-    if account.user_id != current_user.id:
+    if account.user_id != current_user.id and current_user.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="You are not authorized to cancal this order",
+            detail="You are not authorized to cancel this order",
         )
 
     if account.pin != order.pin:
@@ -175,17 +178,14 @@ def delete_orders(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials"
         )
 
-    orders.cancelled = 1
-    orders.status = "C"
-    account = (
-        db.query(models.Accounts)
-        .filter(models.Accounts.id == orders.account_id)
-        .first()
-    )
-    account.line_available += orders.balance * orders.price
+    db_order.cancelled = 1
+    db_order.status = "C"
+
+    if db_order.side == "Buy":
+        account.line_available += db_order.balance * db_order.price
 
     db.commit()
-    db.refresh(orders)
+    db.refresh(db_order)
     return {
         "result": "Order cancelled successfully",
     }
@@ -195,9 +195,9 @@ def delete_orders(
     "/cancel/{id}",
     status_code=status.HTTP_200_OK,
 )
-def get_orders(
+def cancel_order_by_id(
     id: int,
-    current_user: int = Depends(oauth2.get_current_user),
+    current_user: models.User = Depends(oauth2.get_current_user),
     db: Session = Depends(get_db),
 ):
     order = db.query(models.Orders).filter(models.Orders.id == id).first()
@@ -205,19 +205,24 @@ def get_orders(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Order not found"
         )
+    if order.status == "C":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Order is already closed or cancelled"
+        )
+
     account = (
         db.query(models.Accounts).filter(models.Accounts.id == order.account_id).first()
     )
-    if account.user_id != current_user.id:
+    if not account or (account.user_id != current_user.id and current_user.role != "admin"):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="You are not authorized to cancal this order",
+            detail="You are not authorized to cancel this order",
         )
 
     order.cancelled = 1
     order.status = "C"
 
-    if order.type == "Buy":
+    if order.side == "Buy":
         account.line_available += order.balance * order.price
 
     db.commit()
@@ -228,29 +233,30 @@ def get_orders(
 
 
 @router.get(
-    "/endofday",
+    "/one/{id}",
+    response_model=schemas.OrderOut,
     status_code=status.HTTP_200_OK,
 )
-def get_orders(
-    current_user: int = Depends(oauth2.get_current_user),
+def get_order_by_id(
+    id: int,
+    current_user: models.User = Depends(oauth2.get_current_user),
     db: Session = Depends(get_db),
 ):
-    orders = db.query(models.Orders).filter(models.Orders.status == "O").all()
-    for order in orders:
-        order.cancelled = 1
-        order.status = "C"
-        account = (
-            db.query(models.Accounts)
-            .filter(models.Accounts.id == order.account_id)
-            .first()
+    order = db.query(models.Orders).filter(models.Orders.id == id).first()
+    if not order:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Order not found"
         )
-        if order.side == "Buy":
-            account.line_available += order.balance * order.price
 
-    db.commit()
-    return {
-        "result": "End of day",
-    }
+    account = (
+        db.query(models.Accounts).filter(models.Accounts.id == order.account_id).first()
+    )
+    if account and account.user_id != current_user.id and current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized"
+        )
+
+    return order
 
 
 @router.put(
@@ -259,10 +265,10 @@ def get_orders(
 )
 def update_orders(
     order: schemas.OrderUpdate,
-    current_user: int = Depends(oauth2.get_current_user),
+    current_user: models.User = Depends(oauth2.get_current_user),
     db: Session = Depends(get_db),
 ):
-    if current_user.role != "admin" and current_user.broker != "manager":
+    if current_user.role not in ["admin", "broker"]:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="You are not authorized to update this order",
@@ -285,14 +291,15 @@ def update_orders(
         )
 
     if db_order.status == "O":
-        if db_order.side == "BUY":
-            if order.side == "BUY":
+        if db_order.side == "Buy":
+            if order.side == "Buy":
                 account.line_available += db_order.balance * db_order.price
                 account.line_available -= order.balance * order.price
-            elif order.side == "SELL":
+            elif order.side == "Sell":
                 account.line_available += db_order.balance * db_order.price
-        elif db_order.side == "SELL":
-            account.line_available -= order.balance * order.price
+        elif db_order.side == "Sell":
+            if order.side == "Buy":
+                account.line_available -= order.balance * order.price
 
     db_order.price = order.price
     db_order.volume = order.volume
@@ -304,11 +311,42 @@ def update_orders(
     db_order.cancelled = order.cancelled
     db_order.account_id = order.account_id
     db_order.symbol = order.symbol
-    db_order.balance = order.balance
-    order.validity = order.validity
+    db_order.validity = order.validity
 
     db.commit()
     db.refresh(db_order)
     return {
         "result": "Order updated successfully",
     }
+
+
+@router.get(
+    "/{account_id}",
+    response_model=List[schemas.OrderOut],
+    status_code=status.HTTP_200_OK,
+)
+def get_account_orders(
+    account_id: int,
+    current_user: models.User = Depends(oauth2.get_current_user),
+    db: Session = Depends(get_db),
+):
+    account = (
+        db.query(models.Accounts).filter(models.Accounts.id == account_id).first()
+    )
+    if not account:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Account not found"
+        )
+
+    if account.user_id != current_user.id and current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized"
+        )
+
+    orders = (
+        db.query(models.Orders)
+        .filter(models.Orders.account_id == account_id)
+        .order_by(models.Orders.time.desc())
+        .all()
+    )
+    return orders

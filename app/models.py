@@ -7,9 +7,9 @@ from sqlalchemy import (
     Float,
     BigInteger,
     Numeric,
+    func,
 )
 from sqlalchemy.orm import relationship
-from sqlalchemy.sql.expression import text
 from sqlalchemy.sql.sqltypes import TIMESTAMP
 
 from .database import Base
@@ -24,7 +24,7 @@ class User(Base):
     email = Column(String, nullable=False, unique=True)
     password = Column(String, nullable=False)
     created_at = Column(
-        TIMESTAMP(timezone=True), nullable=False, server_default=text("now()")
+        TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
     )
 
 
@@ -34,7 +34,7 @@ class Broker(Base):
     name = Column(String, nullable=False)
     api_key = Column(String, nullable=False)
     created_at = Column(
-        TIMESTAMP(timezone=True), nullable=False, server_default=text("now()")
+        TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
     )
 
 
@@ -59,19 +59,18 @@ class Stock(Base):
     free_float = Column(Integer, nullable=False)
     major_shareholders = Column(Integer, nullable=False)
     created_at = Column(
-        TIMESTAMP(timezone=True), nullable=False, server_default=text("now()")
+        TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
     )
 
 
 class Login_Logout(Base):
     __tablename__ = "login_logout"
-    id = Column(Integer, primary_key=True, nullable=False)
+    id = Column(Integer, primary_key=True, nullable=False, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     login = Column(
         TIMESTAMP(timezone=True),
-        primary_key=True,
         nullable=False,
-        server_default=text("now()"),
+        server_default=func.now(),
     )
     logout = Column(TIMESTAMP(timezone=True))
     device = Column(String)
@@ -88,7 +87,7 @@ class Accounts(Base):
     credit_limit = Column(Float, nullable=False)
     pin = Column(Integer, nullable=False)
     created_at = Column(
-        TIMESTAMP(timezone=True), nullable=False, server_default=text("now()")
+        TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
     )
 
 
@@ -100,7 +99,7 @@ class Bank_transactions(Base):
     type = Column(String, nullable=False)
     amount = Column(Numeric, nullable=False)
     timestamp = Column(
-        TIMESTAMP(timezone=True), nullable=False, server_default=text("now()")
+        TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
     )
 
 
@@ -119,7 +118,7 @@ class Orders(Base):
     cancelled = Column(Integer, nullable=False)
     validity = Column(String, nullable=False)
     time = Column(
-        TIMESTAMP(timezone=True), nullable=False, server_default=text("now()")
+        TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
     )
 
 
@@ -130,7 +129,7 @@ class Transactions(Base):
     price = Column(Float, nullable=False)
     volume = Column(Integer, nullable=False)
     timestamp = Column(
-        TIMESTAMP(timezone=True), nullable=False, server_default=text("now()")
+        TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
     )
 
 
@@ -146,9 +145,8 @@ class Turnover(Base):
     net_profit = Column(Integer)
     timestamp = Column(
         TIMESTAMP(timezone=True),
-        primary_key=True,
         nullable=False,
-        server_default=text("now()"),
+        server_default=func.now(),
     )
 
 
@@ -159,7 +157,7 @@ class Dividend(Base):
     account_id = Column(Integer, ForeignKey("accounts.id"))
     value = Column(Float, nullable=False)
     timestamp = Column(
-        TIMESTAMP(timezone=True), nullable=False, server_default=text("now()")
+        TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
     )
 
 
@@ -180,7 +178,7 @@ class Portfolio(Base):
     volume = Column(Integer, nullable=False)
     price = Column(Float, nullable=False)
     created_at = Column(
-        TIMESTAMP(timezone=True), nullable=False, server_default=text("now()")
+        TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
     )
 
 
@@ -192,5 +190,5 @@ class Notifications(Base):
     price = Column(Float, nullable=False)
     volume = Column(Integer, nullable=False)
     created_at = Column(
-        TIMESTAMP(timezone=True), nullable=False, server_default=text("now()")
+        TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
     )

@@ -12,12 +12,12 @@ router = APIRouter(prefix="/turnover", tags=["Turnover"])
     "/",
 )
 def get_turnover(
-    current_user: int = Depends(oauth2.get_current_user),
+    current_user: models.User = Depends(oauth2.get_current_user),
     db: Session = Depends(get_db),
 ):
     turnover = (
         db.query(models.Turnover)
-        .filter(models.Turnover.user_id == current_user.id)
+        .order_by(models.Turnover.timestamp.desc())
         .first()
     )
     if not turnover:
@@ -32,21 +32,19 @@ def get_turnover(
     "/all",
 )
 def get_all_turnovers(
-    current_user: int = Depends(oauth2.get_current_user),
+    current_user: models.User = Depends(oauth2.get_current_user),
     db: Session = Depends(get_db),
 ):
     turnovers = db.query(models.Turnover).all()
     if not turnovers:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Turnover not found"
-        )
+        return []
 
     return turnovers
 
 
 @router.get("/api")
 def get_quote(
-    current_user: int = Depends(oauth2.get_current_user),
+    current_user: models.User = Depends(oauth2.get_current_user),
     db: Session = Depends(get_db),
 ):
     if current_user.role != "admin":
@@ -62,11 +60,13 @@ def get_quote(
 )
 def get_turnover_symbol(
     symbol: str,
-    current_user: int = Depends(oauth2.get_current_user),
+    current_user: models.User = Depends(oauth2.get_current_user),
     db: Session = Depends(get_db),
 ):
     turnover = (
-        db.query(models.Turnover).filter(models.Turnover.symbol == symbol).first()
+        db.query(models.Turnover)
+        .filter(models.Turnover.symbol == symbol.upper())
+        .first()
     )
     if not turnover:
         raise HTTPException(
