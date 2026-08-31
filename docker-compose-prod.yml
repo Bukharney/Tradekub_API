@@ -1,51 +1,59 @@
-version: "3.9"
-
 services:
-  # ── PostgreSQL ──────────────────────────────────────────────────────────────
+  frontend:
+    image: ghcr.io/bukharney/tradekubv2:latest
+    container_name: tradekub_frontend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:80:80"
+    depends_on:
+      - api
+    networks:
+      - app_net
+
+  api:
+    image: ghcr.io/bukharney/tradekub_api:latest
+    container_name: tradekub_api
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DATABASE_HOSTNAME=postgres
+      - DATABASE_PORT=5432
+      - DATABASE_USERNAME=${DATABASE_USERNAME}
+      - DATABASE_PASSWORD=${DATABASE_PASSWORD}
+      - DATABASE_NAME=${DATABASE_NAME}
+      - SECRET_KEY=${SECRET_KEY}
+      - ALGORITHM=${ALGORITHM:-HS256}
+      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-60}
+      - NEWS_DATA_API_KEY=${NEWS_DATA_API_KEY}
+      - GUNICORN_WORKERS=${GUNICORN_WORKERS:-2}
+    networks:
+      - app_net
+
   postgres:
     image: postgres:15-alpine
+    container_name: tradekub_postgres
     restart: unless-stopped
     environment:
-      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
-      POSTGRES_USER: ${DATABASE_USERNAME}
-      POSTGRES_DB: ${DATABASE_NAME}
+      - POSTGRES_PASSWORD=${DATABASE_PASSWORD}
+      - POSTGRES_USER=${DATABASE_USERNAME}
+      - POSTGRES_DB=${DATABASE_NAME}
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USERNAME} -d ${DATABASE_NAME}"]
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - app_net
 
-  # ── FastAPI backend ─────────────────────────────────────────────────────────
-  api:
-    image: ghcr.io/bukharney/tradekub_api:latest
-    restart: unless-stopped
-    ports:
-      - "8000:8000"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      DATABASE_HOSTNAME: postgres
-      DATABASE_PORT: 5432
-      DATABASE_USERNAME: ${DATABASE_USERNAME}
-      DATABASE_PASSWORD: ${DATABASE_PASSWORD}
-      DATABASE_NAME: ${DATABASE_NAME}
-      SECRET_KEY: ${SECRET_KEY}
-      ALGORITHM: ${ALGORITHM:-HS256}
-      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-60}
-      NEWS_DATA_API_KEY: ${NEWS_DATA_API_KEY}
-      GUNICORN_WORKERS: ${GUNICORN_WORKERS:-2}
-
-  # ── React frontend (nginx) ──────────────────────────────────────────────────
-  frontend:
-    image: ghcr.io/bukharney/tradekubv2:latest
-    restart: unless-stopped
-    ports:
-      - "80:80"
-    depends_on:
-      - api
+networks:
+  app_net:
+    driver: bridge
 
 volumes:
-  postgres-data:
+  postgres_data:
